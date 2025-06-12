@@ -18,7 +18,7 @@ return new class extends Migration
             $table->foreignId('message_id')->constrained('messages')->onDelete('cascade');
             $table->timestamp('read_at')->nullable();
             $table->timestamps();
-            $table->unique(['chat_room_id', 'user_id']);
+            $table->unique(['room_id', 'user_id']);
         });
     }
 
