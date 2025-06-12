@@ -5,7 +5,6 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Illuminate\Support\Facades\Redis;
 
 class LoginController extends Controller
 {
@@ -26,17 +25,6 @@ class LoginController extends Controller
 
     public function logout(Request $request)
     {
-        $validated = $request->validate([
-            'room_id' => 'nullable|string'
-        ]);
-        $room_id = $validated['room_id'] ?? null;
-
-        if (!empty($room_id)) {
-            $key = "chat_room:{$room_id}:users";
-    
-            Redis::hdel($key, auth()->id());
-        }
-
         Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();

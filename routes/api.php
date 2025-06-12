@@ -21,8 +21,11 @@ use App\Http\Controllers\ChatRoomController;
 */
 
 // 인증 관련 라우트
-Route::post('/login', [LoginController::class, 'login']);
-Route::post('/register', [RegisterController::class, 'register']);
+Route::middleware('web')->group(function () {
+    Route::post('/login', [LoginController::class, 'login']);
+    Route::post('/register', [RegisterController::class, 'register']);
+    Route::post('/logout', [LoginController::class, 'logout']);
+});
 
 // 인증이 필요한 라우트
 Route::middleware('auth:sanctum')->group(function () {
@@ -30,7 +33,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', function (Request $request) {
         return $request->user();
     });
-    Route::post('/logout', [LoginController::class, 'logout']);
 
     // 사용자 검색
     Route::get('/users/search', [UserController::class, 'search']);

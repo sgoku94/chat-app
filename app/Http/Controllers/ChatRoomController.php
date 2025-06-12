@@ -8,10 +8,16 @@ use App\Models\MessageRoomUser;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Redis;
+use App\Events\CreateRoomEvent;
 
 class ChatRoomController extends Controller
 {
+    private function processChatRoom($roomInfo ,$friendId) {
+
+        broadcast(new CreateRoomEvent($roomInfo, $friendId))->toOthers();
+
+    }
+
     public function chatJoin(Request $request){
         $request->validate([
             'friend_id' => 'required|exists:users,id'
@@ -110,7 +116,7 @@ class ChatRoomController extends Controller
                         )
                     ) AS unread_count")
                 )
-                ->orderBy('message_room_users.joined_at', 'asc');
+                ->orderBy('last_message_time', 'desc');
 
 /*             Log::info('SQL 쿼리:', [
                 'sql' => $chatList->toSql(),
@@ -129,34 +135,6 @@ class ChatRoomController extends Controller
             ]); */
             return response()->json(['error' => '채팅방 목록을 불러올 수 없습니다.'], 500);
         }
-    }
-
-    public function chat_leave(Request $request){
-        $validated = $request->validate([
-            'room_id' => 'nullable|string'
-        ]);
-        $room_id = $validated['room_id'] ?? null;
-
-        if (!empty($room_id)) {
-            $key = "chat_room:{$room_id}:users";
-    
-            Redis::hdel($key, auth()->id());
-        }
-    }
-
-    public function check(Request $request){
-        $validated = $request->validate([
-            'room_id' => 'nullable|string'
-        ]);
-        $room_id = $validated['room_id'] ?? null;
-
-        $joinUserDate = "";
-
-        if (!empty($room_id)) {
-            $key = "chat_room:{$room_id}:users";
-            $joinUserDate = Redis::hgetall($key);
-        }
-        return response()->json($joinUserDate);
     }
 
     public function createGroupChat(Request $request){
@@ -191,11 +169,33 @@ class ChatRoomController extends Controller
                 'friend_id' => null,
                 'joined_at' => now()
             ]);
+
+            $roomInfo = DB::table('message_room_users')
+                ->leftJoin('users', 'users.id', '=', 'message_room_users.friend_id')
+                ->leftJoin('message_rooms', 'message_rooms.id', '=', 'message_room_users.room_id')
+                ->where('message_room_users.user_id', $friendId)
+                ->where('message_room_users.room_id', $room->id)
+                ->select(
+                    'users.name',
+                    'message_rooms.id as room_id',
+                    'message_rooms.room_name',
+                    'message_rooms.room_type',
+                    'message_room_users.joined_at'
+                )
+                ->get();
+
+            if ($roomInfo) {
+                $roomInfo[0]->last_message = '';
+                $roomInfo[0]->last_message_time = '';
+                $roomInfo[0]->unread_count = 0;
+            }
+            $this -> processChatRoom($roomInfo ,$friendId);
         }
 
         return response()->json([
             'success' => true,
             'room_id' => $room->id,
+            'roomInfo' => $roomInfo,
         ]);
     }
 }
