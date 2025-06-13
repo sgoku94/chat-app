@@ -18,6 +18,7 @@ use App\Models\MessageRoomUser;
     return (int) $user->id === (int) $id;
 }); */
 
+// test주석
 Broadcast::channel('presence_chat.{room_id}', function ($user, $room_id) {
     // 사용자가 해당 채팅방의 멤버인지 확인
     $isMember = MessageRoomUser::where('room_id', $room_id)
