@@ -13,7 +13,6 @@ use App\Events\MessageRead;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Redis;
 
 class MessageController extends Controller
 {
@@ -45,16 +44,6 @@ class MessageController extends Controller
             ->where('a.id', $room_id)
             ->groupBy('a.id', 'a.room_type', 'a.room_name')
             ->first();
-
-            $key = "chat_room:{$room_id}:users";
-
-            $userData = json_encode([
-                'id' => $user_id,
-                'joined_at' => now()->toDateTimeString(),
-            ]);
-
-            Redis::hset($key, $user_id, $userData);
-            // Redis::expire($key, 300);
 
             $totalMembers = $room_info->user_count;
 
@@ -90,11 +79,12 @@ class MessageController extends Controller
         try {
             $validated = $request->validate([
                 'content' => 'required|string',
-                'room_id' => 'required|string'
+                'room_id' => 'required|string',
+                'user_arr' => 'required|array'
             ]);
 
             $room_id = $validated['room_id'];
-            // Log::info('메시지 저장 시도', ['content' => $validated['content']]);
+            $join_user_arr = $validated['user_arr'];
 
             $message = Message::create([
                 'content' => $validated['content'],
@@ -109,15 +99,12 @@ class MessageController extends Controller
 
 
             // Log::info('메시지 저장 성공', ['message_id' => $message->id]);
-            $key = "chat_room:{$room_id}:users";
-            $joinUserDate = Redis::hgetall($key);
-            $joinUserCount = Redis::hlen($key);
+            $joinUserCount = count($join_user_arr);
 
             $name = User::where('id', Auth::id())->value('name');
             $unread_count = $totalMembers - $joinUserCount;
 
-            $ids = array_filter(array_map(fn($j) => json_decode($j, true)['id'] ?? null, $joinUserDate));
-
+            $ids = array_map(fn($j) => $j['id'], $join_user_arr);
             foreach ($ids as $userId) {
                 LastRead::updateOrCreate(
                     [

@@ -15,9 +15,9 @@ use App\Http\Controllers\Auth\LoginController;
 |
 */
 
-Route::get('/', function () {
-    return view('welcome');
-});
+Route::get('/{any}', function () {
+    return view('app');
+})->where('any', '.*');
 
 /* Route::middleware(['auth'])->group(function () {
     Route::post('/api/chat/join', [ChatRoomController::class, 'chatJoin']);
