@@ -57,6 +57,6 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/chat/join', [ChatRoomController::class, 'chatJoin']);
     Route::get('/chat/list', [ChatRoomController::class, 'chatList']);
     Route::post('/chat/leave', [ChatRoomController::class, 'chat_leave']);
-    Route::post('/chat/check', [ChatRoomController::class, 'check']);
+    Route::post('/chat/invite', [ChatRoomController::class, 'chat_invite']);
     Route::post('/chat/groupChat', [ChatRoomController::class, 'createGroupChat']);
 });

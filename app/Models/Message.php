@@ -14,7 +14,7 @@ class Message extends Model
         'room_id',
         'user_id',
         'content',
-        'is_read'
+        'action'
     ];
 
     protected $casts = [

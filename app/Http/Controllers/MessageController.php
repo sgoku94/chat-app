@@ -10,6 +10,7 @@ use App\Models\MessageRoomUser;
 use Illuminate\Http\Request;
 use App\Events\MessageSent;
 use App\Events\MessageRead;
+use App\Events\CreateRoomEvent;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -37,7 +38,7 @@ class MessageController extends Controller
                 'a.room_type',
                 'a.room_name',
                 DB::raw('COUNT(b.user_id) AS user_count'),
-                DB::raw("GROUP_CONCAT(IF(c.id != {$user_id}, c.name, NULL)) AS user_names")
+                DB::raw("GROUP_CONCAT(c.name) AS user_names")
             )
             ->leftJoin('message_room_users as b', 'b.room_id', '=', 'a.id')
             ->leftJoin('users as c', 'b.user_id', '=', 'c.id')
@@ -51,15 +52,20 @@ class MessageController extends Controller
 
             $messages = DB::table('messages as m')
                     ->leftJoin('users as u', 'u.id', '=', 'm.user_id')
+                    ->leftJoin('message_room_users as r', function ($join) use ($user_id) {
+                        $join->on('r.room_id', '=', 'm.room_id')
+                            ->where('r.user_id', '=', $user_id);
+                    })
                     ->select([
                         'm.*', 'u.name',
-                        DB::raw("$totalMembers - (
+                        DB::raw("GREATEST(0, $totalMembers - (
                             SELECT COUNT(*) FROM last_reads as lr
                             WHERE lr.room_id = {$room_id}
                             AND lr.message_id >= m.id
-                        ) AS unread_count")
+                        )) AS unread_count")
                     ])
                     ->where('m.room_id', $room_id)
+                    ->whereColumn('m.created_at', '>=', 'r.joined_at')
                     ->orderBy('m.created_at', 'asc')
                     ->get();
 
@@ -80,16 +86,20 @@ class MessageController extends Controller
             $validated = $request->validate([
                 'content' => 'required|string',
                 'room_id' => 'required|string',
+                'action' => 'required|string',
                 'user_arr' => 'required|array'
             ]);
-
+            // return false;
             $room_id = $validated['room_id'];
+            $action = $validated['action'];
             $join_user_arr = $validated['user_arr'];
+            $name = User::where('id', Auth::id())->value('name');
 
             $message = Message::create([
                 'content' => $validated['content'],
                 'user_id' => Auth::id(),
-                'room_id' => $validated['room_id']
+                'room_id' => $validated['room_id'],
+                'action' => $action
             ]);
 
             $room = MessageRoom::findOrFail($room_id);
@@ -97,11 +107,45 @@ class MessageController extends Controller
             $totalMembers = $room->users()
                 ->count();
 
+            // 1:1 채팅방 경우 첫 메시지 발송 및 수신 채팅방 리스트에 노출 start
+            if($action == 'message'){
+                $first_msg_chk = MessageRoomUser::where('room_id', $room_id)
+                                    ->whereNull('joined_at')
+                                    ->get();
+                if ($first_msg_chk->count() > 0) {
+                    $roomInfo = (object) [
+                        'room_id' => $room->id,
+                        'room_type' => $room->room_type,
+                        'last_message' => $message->content,
+                        'last_message_time' => $message->created_at,
+                        'joined_at' => now(),
+                        'unread_count' => 0,
+                        'room_name' => '',
+                    ];
+                    
+                    foreach ($first_msg_chk as $user) {
+    
+                        $user->joined_at = now();
+                        $user->save();
+    
+                        if ($user->user_id == auth()->id()) {
+                            $otherName = User::where('id', $user->friend_id)->value('name');
+                            $myRoomInfo = clone $roomInfo;
+                            $myRoomInfo->name = $otherName;
+                        } else {
+                            $otherRoomInfo = clone $roomInfo;
+                            $otherRoomInfo->name = $name;
+    
+                            broadcast(new CreateRoomEvent((array) $otherRoomInfo, $user->user_id))->toOthers();
+                        }
+                    }
+                }
+            }
+            // 1:1 채팅방 경우 첫 메시지 발송 시 채팅방 리스트에 노출 end
 
-            // Log::info('메시지 저장 성공', ['message_id' => $message->id]);
+            // 입장된 유저 수에 따른 카운터 처리
             $joinUserCount = count($join_user_arr);
 
-            $name = User::where('id', Auth::id())->value('name');
             $unread_count = $totalMembers - $joinUserCount;
 
             $ids = array_map(fn($j) => $j['id'], $join_user_arr);
@@ -127,16 +171,24 @@ class MessageController extends Controller
 
                 broadcast(new MessageSent($message, $name, $unread_count,$room_user_id))->toOthers();
             }
+            // 입장된 유저 수에 따른 카운터 처리 end
 
             $message['unread_count'] = $unread_count;
             $message['name'] = $name;
             return response()->json([
-                $message
+                'message' => $message,
+                'myRoomInfo' =>$myRoomInfo ?? null
             ]);
         } catch (\Exception $e) {
             Log::error('메시지 저장 실패: ' . $e->getMessage());
             return response()->json(['error' => '메시지를 저장할 수 없습니다.'], 500);
         }
+    }
+
+    private function processChatRoom($roomInfo ,$friendId) {
+
+        broadcast(new CreateRoomEvent($roomInfo, $friendId))->toOthers();
+
     }
 
     private function processRead($room_id, $totalMembers) {

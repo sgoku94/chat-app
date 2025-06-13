@@ -13,7 +13,7 @@ return new class extends Migration
             $table->foreignId('room_id')->constrained('message_rooms')->onDelete('cascade');
             $table->foreignId('user_id')->constrained()->onDelete('cascade');
             $table->text('content');
-            $table->boolean('is_read')->default(false);
+            $table->string('action', 10)->nullable();
             $table->timestamps();
         });
     }
